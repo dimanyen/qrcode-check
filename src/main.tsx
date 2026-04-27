@@ -3,7 +3,7 @@ import { createRoot } from "react-dom/client";
 import Papa from "papaparse";
 import { QRCodeSVG } from "qrcode.react";
 import { Html5Qrcode, type Html5QrcodeCameraScanConfig } from "html5-qrcode";
-import { Camera, CheckCircle2, Download, FileUp, Printer, QrCode, RefreshCw, Upload } from "lucide-react";
+import { Camera, CheckCircle2, ClipboardPaste, Download, FileUp, Printer, QrCode, RefreshCw, Upload, X } from "lucide-react";
 import "./styles.css";
 
 type TaskSummary = {
@@ -183,9 +183,34 @@ function App() {
 function TaskImporter({ onCreated }: { onCreated: (task: TaskSummary) => void }) {
   const [name, setName] = useState("");
   const [csv, setCsv] = useState<ParsedCsv | null>(null);
+  const [csvText, setCsvText] = useState("");
+  const [pasteModalOpen, setPasteModalOpen] = useState(false);
   const [resourceColumn, setResourceColumn] = useState("");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+
+  function applyParsedCsv(result: Papa.ParseResult<Record<string, string>>, fallbackName: string) {
+    if (result.errors.length) {
+      setError(result.errors[0].message);
+      return false;
+    }
+
+    const fields = result.meta.fields?.filter(Boolean) || [];
+    const rows = result.data.filter((row) => Object.values(row).some((value) => String(value ?? "").trim()));
+    if (!fields.length) {
+      setError("CSV 內容缺少標題列");
+      return false;
+    }
+    if (!rows.length) {
+      setError("CSV 內沒有可匯入的資料列");
+      return false;
+    }
+
+    setCsv({ fields, rows });
+    setResourceColumn(fields[0] || "");
+    if (!name) setName(fallbackName);
+    return true;
+  }
 
   function handleFile(file: File | undefined) {
     if (!file) return;
@@ -194,10 +219,7 @@ function TaskImporter({ onCreated }: { onCreated: (task: TaskSummary) => void })
       header: true,
       skipEmptyLines: true,
       complete(result) {
-        const fields = result.meta.fields?.filter(Boolean) || [];
-        setCsv({ fields, rows: result.data });
-        setResourceColumn(fields[0] || "");
-        if (!name) setName(file.name.replace(/\.[^.]+$/, ""));
+        applyParsedCsv(result, file.name.replace(/\.[^.]+$/, ""));
       },
       error(err) {
         setError(err.message);
@@ -205,8 +227,31 @@ function TaskImporter({ onCreated }: { onCreated: (task: TaskSummary) => void })
     });
   }
 
+  function parsePastedCsv() {
+    const text = csvText.trim();
+    if (!text) {
+      setError("請先貼上 CSV 文字");
+      return false;
+    }
+
+    setError("");
+    let parsed = false;
+    Papa.parse<Record<string, string>>(text, {
+      header: true,
+      skipEmptyLines: true,
+      complete(result) {
+        parsed = applyParsedCsv(result, "貼上 CSV");
+      },
+      error(err: Error) {
+        setError(err.message);
+      }
+    });
+    if (parsed) setPasteModalOpen(false);
+    return parsed;
+  }
+
   async function submit() {
-    if (!csv) return setError("請先選擇 CSV 檔");
+    if (!csv) return setError("請先選擇 CSV 檔或貼上 CSV 文字");
     setSubmitting(true);
     setError("");
     try {
@@ -217,6 +262,7 @@ function TaskImporter({ onCreated }: { onCreated: (task: TaskSummary) => void })
       });
       setName("");
       setCsv(null);
+      setCsvText("");
       setResourceColumn("");
       onCreated(created);
     } catch (err) {
@@ -237,6 +283,41 @@ function TaskImporter({ onCreated }: { onCreated: (task: TaskSummary) => void })
         <span>{csv ? `${csv.rows.length} 筆資料已載入` : "選擇資產 CSV"}</span>
         <input type="file" accept=".csv,text/csv" onChange={(event) => handleFile(event.target.files?.[0])} />
       </label>
+      <button className="secondary-button" type="button" onClick={() => setPasteModalOpen(true)}>
+        <ClipboardPaste size={16} />
+        貼上 CSV 文字
+      </button>
+      {pasteModalOpen && (
+        <div className="modal-backdrop" role="presentation">
+          <section className="paste-modal" role="dialog" aria-modal="true" aria-labelledby="paste-csv-title">
+            <header className="modal-header">
+              <h2 id="paste-csv-title">貼上 CSV 文字</h2>
+              <button className="icon-button" type="button" onClick={() => setPasteModalOpen(false)} title="關閉">
+                <X size={16} />
+              </button>
+            </header>
+            <label>
+              <span>CSV 內容</span>
+              <textarea
+                className="csv-textarea"
+                value={csvText}
+                onChange={(event) => setCsvText(event.target.value)}
+                placeholder={"資產編號,資產名稱,存放位置\n0000000001,筆記型電腦,台北辦公室"}
+                autoFocus
+              />
+            </label>
+            <div className="modal-actions">
+              <button className="secondary-button" type="button" onClick={() => setPasteModalOpen(false)}>
+                取消
+              </button>
+              <button className="primary-button" type="button" onClick={parsePastedCsv}>
+                <ClipboardPaste size={16} />
+                解析 CSV
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
       {csv && (
         <label>
           <span>資源編號欄位</span>
