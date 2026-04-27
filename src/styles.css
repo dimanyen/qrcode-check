@@ -489,9 +489,73 @@ textarea {
   margin-top: 16px;
 }
 
+.inventory-filters {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) auto auto;
+  gap: 10px;
+  align-items: center;
+  margin-top: 16px;
+}
+
+.inventory-search {
+  position: relative;
+  display: block;
+}
+
+.inventory-search svg {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #627084;
+  pointer-events: none;
+}
+
+.inventory-search input {
+  padding-left: 38px;
+}
+
+.filter-tabs {
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  background: #edf1f5;
+  border-radius: 8px;
+}
+
+.filter-tabs button {
+  min-height: 32px;
+  border: 0;
+  border-radius: 6px;
+  padding: 0 10px;
+  color: #445164;
+  background: transparent;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.filter-tabs button.active {
+  color: #ffffff;
+  background: #146c5f;
+}
+
+.filter-count {
+  color: #627084;
+  font-size: 13px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.inventory-empty {
+  padding: 18px;
+  border: 1px dashed #cbd4df;
+  border-radius: 8px;
+  text-align: center;
+}
+
 .inventory-row {
   display: grid;
-  grid-template-columns: minmax(150px, 1.3fr) minmax(120px, 1fr) minmax(110px, 0.8fr) minmax(130px, 1fr) 72px;
+  grid-template-columns: minmax(150px, 1.25fr) minmax(120px, 0.9fr) minmax(110px, 0.75fr) minmax(120px, 0.85fr) minmax(140px, 1fr) 72px;
   gap: 12px;
   align-items: center;
   padding: 12px;
@@ -508,7 +572,8 @@ textarea {
 .inventory-main,
 .inventory-location,
 .inventory-status,
-.inventory-scanner {
+.inventory-scanner,
+.inventory-note {
   display: grid;
   gap: 3px;
   min-width: 0;
@@ -518,16 +583,25 @@ textarea {
 .inventory-main span,
 .inventory-location strong,
 .inventory-scanner span,
-.inventory-scanner small {
+.inventory-scanner small,
+.inventory-note span,
+.inventory-note small {
   overflow-wrap: anywhere;
 }
 
 .inventory-main span,
 .inventory-location span,
 .inventory-status small,
-.inventory-scanner small {
+.inventory-scanner small,
+.inventory-note small {
   color: #627084;
   font-size: 13px;
+}
+
+.inventory-note span {
+  color: #263548;
+  font-size: 14px;
+  line-height: 1.35;
 }
 
 .inventory-location strong {
@@ -912,6 +986,16 @@ textarea {
 
   .inventory-row {
     grid-template-columns: 1fr 1fr 96px;
+  }
+
+  .inventory-filters {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+
+  .filter-tabs {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
   }
 }
 

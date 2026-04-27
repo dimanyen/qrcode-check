@@ -17,6 +17,7 @@ import {
   Printer,
   QrCode,
   RefreshCw,
+  Search,
   Trash2,
   Upload,
   X
@@ -483,6 +484,8 @@ function EmptyState() {
 function TaskWorkspace({ task, onRefresh }: { task: TaskDetail; onRefresh: () => void }) {
   const [viewMode, setViewMode] = useState<"qr" | "list">("qr");
   const [copiedScanUrl, setCopiedScanUrl] = useState(false);
+  const [inventoryStatusFilter, setInventoryStatusFilter] = useState<"all" | "checked" | "missing">("all");
+  const [inventoryQuery, setInventoryQuery] = useState("");
   const checkedRatio = task.summary.total ? Math.round((task.summary.checked / task.summary.total) * 100) : 0;
   const scanHref = `/scan?task=${task.id}`;
   const scanUrl = new URL(scanHref, window.location.origin).toString();
@@ -490,6 +493,29 @@ function TaskWorkspace({ task, onRefresh }: { task: TaskDetail; onRefresh: () =>
     .filter((asset) => asset.checkedAt)
     .sort((a, b) => String(b.checkedAt).localeCompare(String(a.checkedAt)))
     .slice(0, 8);
+  const filteredAssets = useMemo(() => {
+    const query = inventoryQuery.trim().toLowerCase();
+    return task.assets.filter((asset) => {
+      if (inventoryStatusFilter === "checked" && !asset.checkedAt) return false;
+      if (inventoryStatusFilter === "missing" && asset.checkedAt) return false;
+      if (!query) return true;
+
+      const searchableText = [
+        asset.assetNo,
+        asset.raw["資產名稱"],
+        asset.raw.name,
+        asset.raw.Name,
+        getAssetLocation(task, asset),
+        asset.scannedBy?.name,
+        asset.scannedBy?.employeeId,
+        asset.scannedBy?.note
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return searchableText.includes(query);
+    });
+  }, [inventoryQuery, inventoryStatusFilter, task]);
 
   async function copyScanUrl() {
     await navigator.clipboard.writeText(scanUrl);
@@ -554,41 +580,79 @@ function TaskWorkspace({ task, onRefresh }: { task: TaskDetail; onRefresh: () =>
               ))}
             </div>
           ) : (
-            <div className="inventory-list">
-              {task.assets.map((asset) => (
-                <article className={`inventory-row ${asset.checkedAt ? "checked" : ""}`} key={asset.assetNo}>
-                  <div className="inventory-main">
-                    <strong>{asset.assetNo}</strong>
-                    <span>{asset.raw["資產名稱"] || asset.raw.name || asset.raw.Name || "未命名資產"}</span>
-                  </div>
-                  <div className="inventory-location">
-                    <span>地點</span>
-                    <strong>{getAssetLocation(task, asset) || "-"}</strong>
-                  </div>
-                  <div className="inventory-status">
-                    <span className={asset.checkedAt ? "status-pill checked" : "status-pill"}>{asset.checkedAt ? "已盤點" : "待盤點"}</span>
-                    <small>{formatDate(asset.checkedAt)}</small>
-                  </div>
-                  <div className="inventory-scanner">
-                    <small>盤點人</small>
-                    <span>{asset.scannedBy?.name || "-"}</span>
-                    <small>{asset.scannedBy?.employeeId || ""}</small>
-                    {asset.scannedBy?.note && <small>{asset.scannedBy.note}</small>}
-                  </div>
-                  <div className="inventory-photo">
-                    {asset.scanPhotoUrl ? (
-                      <a href={asset.scanPhotoUrl} target="_blank" rel="noreferrer" title="開啟照片">
-                        <img src={asset.scanPhotoUrl} alt={`${asset.assetNo} 盤點照片`} />
-                      </a>
-                    ) : (
-                      <span>
-                        <ImageIcon size={18} />
-                      </span>
-                    )}
-                  </div>
-                </article>
-              ))}
-            </div>
+            <>
+              <div className="inventory-filters">
+                <label className="inventory-search">
+                  <Search size={16} />
+                  <input
+                    value={inventoryQuery}
+                    onChange={(event) => setInventoryQuery(event.target.value)}
+                    placeholder="搜尋資產、地點、盤點人、備註"
+                  />
+                </label>
+                <div className="filter-tabs" role="tablist" aria-label="盤點狀態篩選">
+                  <button className={inventoryStatusFilter === "all" ? "active" : ""} type="button" onClick={() => setInventoryStatusFilter("all")}>
+                    全部
+                  </button>
+                  <button
+                    className={inventoryStatusFilter === "checked" ? "active" : ""}
+                    type="button"
+                    onClick={() => setInventoryStatusFilter("checked")}
+                  >
+                    已盤點
+                  </button>
+                  <button
+                    className={inventoryStatusFilter === "missing" ? "active" : ""}
+                    type="button"
+                    onClick={() => setInventoryStatusFilter("missing")}
+                  >
+                    待盤點
+                  </button>
+                </div>
+                <span className="filter-count">
+                  {filteredAssets.length}/{task.assets.length} 筆
+                </span>
+              </div>
+              <div className="inventory-list">
+                {filteredAssets.map((asset) => (
+                  <article className={`inventory-row ${asset.checkedAt ? "checked" : ""}`} key={asset.assetNo}>
+                    <div className="inventory-main">
+                      <strong>{asset.assetNo}</strong>
+                      <span>{asset.raw["資產名稱"] || asset.raw.name || asset.raw.Name || "未命名資產"}</span>
+                    </div>
+                    <div className="inventory-location">
+                      <span>地點</span>
+                      <strong>{getAssetLocation(task, asset) || "-"}</strong>
+                    </div>
+                    <div className="inventory-status">
+                      <span className={asset.checkedAt ? "status-pill checked" : "status-pill"}>{asset.checkedAt ? "已盤點" : "待盤點"}</span>
+                      <small>{formatDate(asset.checkedAt)}</small>
+                    </div>
+                    <div className="inventory-scanner">
+                      <small>盤點人</small>
+                      <span>{asset.scannedBy?.name || "-"}</span>
+                      <small>{asset.scannedBy?.employeeId || ""}</small>
+                    </div>
+                    <div className="inventory-note">
+                      <small>備註</small>
+                      <span>{asset.scannedBy?.note || "-"}</span>
+                    </div>
+                    <div className="inventory-photo">
+                      {asset.scanPhotoUrl ? (
+                        <a href={asset.scanPhotoUrl} target="_blank" rel="noreferrer" title="開啟照片">
+                          <img src={asset.scanPhotoUrl} alt={`${asset.assetNo} 盤點照片`} />
+                        </a>
+                      ) : (
+                        <span>
+                          <ImageIcon size={18} />
+                        </span>
+                      )}
+                    </div>
+                  </article>
+                ))}
+                {!filteredAssets.length && <p className="empty inventory-empty">沒有符合條件的資產。</p>}
+              </div>
+            </>
           )}
         </div>
 
