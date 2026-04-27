@@ -7,11 +7,14 @@ const app = express();
 const PORT = process.env.PORT || 4173;
 const DATA_DIR = path.join(__dirname, "..", "data");
 const STORE_FILE = path.join(DATA_DIR, "store.json");
+const SCAN_PHOTO_DIR = path.join(DATA_DIR, "scan-photos");
 
 app.use(express.json({ limit: "10mb" }));
+app.use("/scan-photos", express.static(SCAN_PHOTO_DIR));
 
 function ensureStore() {
   if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+  if (!fs.existsSync(SCAN_PHOTO_DIR)) fs.mkdirSync(SCAN_PHOTO_DIR, { recursive: true });
   if (!fs.existsSync(STORE_FILE)) {
     fs.writeFileSync(STORE_FILE, JSON.stringify({ tasks: [] }, null, 2));
   }
@@ -25,6 +28,21 @@ function readStore() {
 function writeStore(store) {
   ensureStore();
   fs.writeFileSync(STORE_FILE, JSON.stringify(store, null, 2));
+}
+
+function saveScanPhoto(taskId, assetNo, photoDataUrl) {
+  if (!photoDataUrl) return null;
+  const match = String(photoDataUrl).match(/^data:image\/(jpeg|jpg|png);base64,([A-Za-z0-9+/=]+)$/);
+  if (!match) return null;
+
+  ensureStore();
+  const extension = match[1] === "png" ? "png" : "jpg";
+  const safeTaskId = String(taskId).replace(/[^a-zA-Z0-9_-]/g, "");
+  const safeAssetNo = String(assetNo).replace(/[^a-zA-Z0-9_-]/g, "_");
+  const filename = `${safeTaskId}-${safeAssetNo}-${Date.now()}.${extension}`;
+  const filePath = path.join(SCAN_PHOTO_DIR, filename);
+  fs.writeFileSync(filePath, Buffer.from(match[2], "base64"));
+  return `/scan-photos/${filename}`;
 }
 
 function toSummary(task) {
@@ -53,7 +71,8 @@ app.post("/api/tasks", (req, res) => {
         .map((asset) => ({
           assetNo: String(asset.assetNo || "").trim(),
           raw: asset.raw && typeof asset.raw === "object" ? asset.raw : {},
-          checkedAt: null
+          checkedAt: null,
+          scanPhotoUrl: null
         }))
         .filter((asset) => asset.assetNo)
     : [];
@@ -108,10 +127,13 @@ app.post("/api/tasks/:id/scan", (req, res) => {
   if (!asset) return res.status(404).json({ error: "此任務沒有這個資產編號" });
 
   const now = new Date().toISOString();
+  const alreadyChecked = Boolean(asset.checkedAt);
+  const scanPhotoUrl = saveScanPhoto(task.id, asset.assetNo, req.body.photoDataUrl);
   asset.checkedAt = asset.checkedAt || now;
+  if (scanPhotoUrl) asset.scanPhotoUrl = scanPhotoUrl;
   task.updatedAt = now;
   writeStore(store);
-  res.json({ asset, summary: toSummary(task), alreadyChecked: asset.checkedAt !== now });
+  res.json({ asset, summary: toSummary(task), alreadyChecked });
 });
 
 app.get("/api/tasks/:id/export", (req, res) => {
@@ -125,7 +147,7 @@ app.get("/api/tasks/:id/export", (req, res) => {
       return columns;
     }, new Set())
   );
-  const columns = ["assetNo", "status", "checkedAt", ...rawColumns.filter((column) => column !== "assetNo")];
+  const columns = ["assetNo", "status", "checkedAt", "scanPhotoUrl", ...rawColumns.filter((column) => column !== "assetNo")];
   const escapeCsv = (value) => {
     const text = value == null ? "" : String(value);
     return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
@@ -138,6 +160,7 @@ app.get("/api/tasks/:id/export", (req, res) => {
           if (column === "assetNo") return escapeCsv(asset.assetNo);
           if (column === "status") return escapeCsv(asset.checkedAt ? "checked" : "missing");
           if (column === "checkedAt") return escapeCsv(asset.checkedAt);
+          if (column === "scanPhotoUrl") return escapeCsv(asset.scanPhotoUrl);
           return escapeCsv(asset.raw?.[column]);
         })
         .join(",")

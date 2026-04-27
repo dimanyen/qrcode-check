@@ -21,6 +21,7 @@ type Asset = {
   assetNo: string;
   raw: Record<string, string>;
   checkedAt: string | null;
+  scanPhotoUrl?: string | null;
 };
 
 type TaskDetail = {
@@ -36,6 +37,12 @@ type TaskDetail = {
 type ParsedCsv = {
   fields: string[];
   rows: Record<string, string>[];
+};
+
+type PendingScan = {
+  assetNo: string;
+  rawValue: string;
+  photoDataUrl: string | null;
 };
 
 const api = {
@@ -57,11 +64,11 @@ const api = {
     if (!response.ok) throw new Error((await response.json()).error || "建立任務失敗");
     return response.json() as Promise<TaskSummary>;
   },
-  async scan(taskId: string, assetNo: string) {
+  async scan(taskId: string, assetNo: string, photoDataUrl?: string | null) {
     const response = await fetch(`/api/tasks/${taskId}/scan`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ assetNo })
+      body: JSON.stringify({ assetNo, photoDataUrl })
     });
     const payload = await response.json();
     if (!response.ok) throw new Error(payload.error || "盤點失敗");
@@ -457,38 +464,79 @@ function ScannerPage({
   const initialAssetHandledRef = useRef(false);
   const [message, setMessage] = useState("");
   const [status, setStatus] = useState<"idle" | "ok" | "error">("idle");
-  const [scanState, setScanState] = useState<"scanning" | "processing">("scanning");
+  const [scanState, setScanState] = useState<"scanning" | "processing" | "confirming">("scanning");
   const [lastAssetNo, setLastAssetNo] = useState("");
   const [manualAssetNo, setManualAssetNo] = useState(new URLSearchParams(location.search).get("asset") || "");
+  const [pendingScan, setPendingScan] = useState<PendingScan | null>(null);
   const readerId = "qr-reader";
 
   const checkedLookup = useMemo(() => new Set(task?.assets.filter((asset) => asset.checkedAt).map((asset) => asset.assetNo)), [task]);
 
-  const markScanned = useCallback(async (rawValue: string) => {
+  function captureScannerPhoto() {
+    const video = document.querySelector<HTMLVideoElement>(`#${readerId} video`);
+    if (!video || !video.videoWidth || !video.videoHeight) return null;
+
+    const canvas = document.createElement("canvas");
+    const maxWidth = 1280;
+    const scale = Math.min(1, maxWidth / video.videoWidth);
+    canvas.width = Math.round(video.videoWidth * scale);
+    canvas.height = Math.round(video.videoHeight * scale);
+    const context = canvas.getContext("2d");
+    if (!context) return null;
+    context.drawImage(video, 0, 0, canvas.width, canvas.height);
+    return canvas.toDataURL("image/jpeg", 0.82);
+  }
+
+  const confirmScan = useCallback(async () => {
+    if (!taskId || !pendingScan) return;
+    const assetNo = pendingScan.assetNo;
+    setScanState("processing");
+    try {
+      const result = await api.scan(taskId, assetNo, pendingScan.photoDataUrl);
+      setLastAssetNo(assetNo);
+      setStatus("ok");
+      setMessage(`${assetNo} 已完成盤點${result.alreadyChecked ? "，先前已掃描過" : ""}`);
+      setPendingScan(null);
+      navigator.vibrate?.(80);
+      await onLoadTask(taskId);
+      window.setTimeout(() => {
+        processingRef.current = false;
+        setScanState("scanning");
+      }, 700);
+    } catch (err) {
+      setLastAssetNo(assetNo);
+      setStatus("error");
+      setMessage(err instanceof Error ? err.message : "盤點失敗");
+      setScanState("confirming");
+    }
+  }, [onLoadTask, pendingScan, taskId]);
+
+  function cancelPendingScan() {
+    setPendingScan(null);
+    processingRef.current = false;
+    setScanState("scanning");
+  }
+
+  const prepareScanConfirmation = useCallback((rawValue: string) => {
     if (!taskId) {
       setStatus("error");
       setMessage("缺少任務代碼，請從任務頁開啟掃描。");
-      return;
+      return false;
     }
     const assetNo = parseAssetNo(rawValue);
     if (!assetNo) {
       setStatus("error");
       setMessage("沒有偵測到有效的資產編號。");
-      return;
+      return false;
     }
-    try {
-      const result = await api.scan(taskId, assetNo);
-      setLastAssetNo(assetNo);
-      setStatus("ok");
-      setMessage(`${assetNo} 已完成盤點${result.alreadyChecked ? "，先前已掃描過" : ""}`);
-      navigator.vibrate?.(80);
-      await onLoadTask(taskId);
-    } catch (err) {
-      setLastAssetNo(assetNo);
-      setStatus("error");
-      setMessage(err instanceof Error ? err.message : "盤點失敗");
-    }
-  }, [onLoadTask, taskId]);
+
+    setLastAssetNo(assetNo);
+    setPendingScan({ assetNo, rawValue, photoDataUrl: captureScannerPhoto() });
+    setStatus("idle");
+    setMessage("");
+    setScanState("confirming");
+    return true;
+  }, [taskId]);
 
   async function handleDetected(rawValue: string) {
     const now = Date.now();
@@ -499,12 +547,11 @@ function ScannerPage({
 
     processingRef.current = true;
     lastDecodedRef.current = { value: decoded, scannedAt: now };
-    setScanState("processing");
-    await markScanned(decoded);
-    window.setTimeout(() => {
+    const prepared = prepareScanConfirmation(decoded);
+    if (!prepared) {
       processingRef.current = false;
       setScanState("scanning");
-    }, 900);
+    }
   }
 
   useEffect(() => {
@@ -516,7 +563,7 @@ function ScannerPage({
     if (!taskId || !assetFromUrl || initialAssetHandledRef.current) return;
     initialAssetHandledRef.current = true;
     handleDetected(assetFromUrl);
-  }, [taskId, markScanned]);
+  }, [taskId, prepareScanConfirmation]);
 
   useEffect(() => {
     let disposed = false;
@@ -563,7 +610,7 @@ function ScannerPage({
         .catch(() => undefined)
         .finally(() => scanner.clear());
     };
-  }, [taskId, markScanned]);
+  }, [taskId, prepareScanConfirmation]);
 
   return (
     <main className="scan-shell">
@@ -579,11 +626,33 @@ function ScannerPage({
         <div className="scanner-frame">
           <div id={readerId} />
           <div className={`scan-badge ${scanState}`}>
-            {scanState === "processing" ? "偵測到 QR，執行盤點中" : "自動偵測 QR Code"}
+            {scanState === "processing" ? "儲存盤點中" : scanState === "confirming" ? "請確認此資產" : "自動偵測 QR Code"}
           </div>
         </div>
+        {pendingScan && (
+          <div className="confirm-scan-card">
+            <div>
+              <span>待確認資產</span>
+              <strong>{pendingScan.assetNo}</strong>
+            </div>
+            {pendingScan.photoDataUrl ? (
+              <img src={pendingScan.photoDataUrl} alt="掃描當下照片" />
+            ) : (
+              <p className="empty">目前沒有可儲存的相機畫面。</p>
+            )}
+            <div className="confirm-actions">
+              <button className="secondary-button" type="button" onClick={cancelPendingScan}>
+                取消
+              </button>
+              <button className="primary-button" type="button" onClick={confirmScan} disabled={scanState === "processing"}>
+                <CheckCircle2 size={16} />
+                確認盤點
+              </button>
+            </div>
+          </div>
+        )}
         {message && <div className={`notice ${status === "error" ? "error" : "success"}`}>{message}</div>}
-        {lastAssetNo && (
+        {lastAssetNo && !pendingScan && (
           <div className={`detected-card ${status === "error" ? "error" : "success"}`}>
             <span>最近偵測</span>
             <strong>{lastAssetNo}</strong>
@@ -593,7 +662,7 @@ function ScannerPage({
           <input value={manualAssetNo} onChange={(event) => setManualAssetNo(event.target.value)} placeholder="手動輸入資產編號" />
           <button className="primary-button" onClick={() => handleDetected(manualAssetNo)}>
             <CheckCircle2 size={16} />
-            確認
+            建立確認
           </button>
         </div>
       </section>

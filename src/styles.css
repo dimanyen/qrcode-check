@@ -474,6 +474,46 @@ textarea {
   background: rgba(20, 108, 95, 0.92);
 }
 
+.confirm-scan-card {
+  display: grid;
+  gap: 12px;
+  margin: 12px 0;
+  padding: 12px;
+  border: 1px solid #9ed4bd;
+  border-radius: 8px;
+  background: #eef8f4;
+}
+
+.confirm-scan-card span {
+  display: block;
+  color: #116143;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.confirm-scan-card strong {
+  display: block;
+  margin-top: 3px;
+  overflow-wrap: anywhere;
+  color: #0c4935;
+  font-size: 24px;
+  letter-spacing: 0;
+}
+
+.confirm-scan-card img {
+  width: 100%;
+  max-height: 360px;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1px solid #b9dfce;
+}
+
+.confirm-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
 .detected-card {
   display: grid;
   gap: 3px;
@@ -576,6 +616,10 @@ textarea {
 
   .actions,
   .manual-scan {
+    grid-template-columns: 1fr;
+  }
+
+  .confirm-actions {
     grid-template-columns: 1fr;
   }
 
