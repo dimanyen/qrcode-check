@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { createRoot } from "react-dom/client";
 import Papa from "papaparse";
 import { QRCodeSVG } from "qrcode.react";
-import { Html5Qrcode } from "html5-qrcode";
+import { Html5Qrcode, type Html5QrcodeCameraScanConfig } from "html5-qrcode";
 import { Camera, CheckCircle2, Download, FileUp, Printer, QrCode, RefreshCw, Upload } from "lucide-react";
 import "./styles.css";
 
@@ -102,11 +102,11 @@ function App() {
   const [error, setError] = useState("");
   const isScanPage = location.pathname === "/scan";
 
-  async function refreshTasks() {
+  const refreshTasks = useCallback(async () => {
     setTasks(await api.listTasks());
-  }
+  }, []);
 
-  async function loadTask(id: string) {
+  const loadTask = useCallback(async (id: string) => {
     setLoading(true);
     setError("");
     try {
@@ -117,7 +117,7 @@ function App() {
     } finally {
       setLoading(false);
     }
-  }
+  }, []);
 
   useEffect(() => {
     refreshTasks();
@@ -442,7 +442,7 @@ function ScannerPage({
     const scanner = new Html5Qrcode(readerId);
     scannerRef.current = scanner;
 
-    const scanConfig = {
+    const scanConfig: Html5QrcodeCameraScanConfig = {
       fps: 10,
       qrbox: (viewfinderWidth: number, viewfinderHeight: number) => {
         const size = Math.floor(Math.min(viewfinderWidth, viewfinderHeight, 280) * 0.82);
@@ -454,20 +454,33 @@ function ScannerPage({
       if (disposed) return;
       handleDetected(decodedText);
     };
+    const startScanner = async () => {
+      try {
+        await scanner.start({ facingMode: { exact: "environment" } }, scanConfig, onSuccess, () => undefined);
+      } catch {
+        if (disposed) return;
+        try {
+          await scanner.start({ facingMode: "environment" }, scanConfig, onSuccess, () => undefined);
+        } catch {
+          if (disposed) return;
+          await scanner.start({ facingMode: "user" }, scanConfig, onSuccess, () => undefined);
+        }
+      }
+    };
 
-    scanner
-      .start({ facingMode: { exact: "environment" } }, scanConfig, onSuccess, () => undefined)
-      .catch(() => scanner.start({ facingMode: "environment" }, scanConfig, onSuccess, () => undefined))
-      .catch(() => scanner.start({ facingMode: "user" }, scanConfig, onSuccess, () => undefined))
-      .catch(() => {
+    startScanner().catch(() => {
+      if (!disposed) {
         setStatus("error");
         setMessage("無法開啟相機，請確認瀏覽器權限，或使用手動輸入。");
-      });
+      }
+    });
 
     return () => {
       disposed = true;
-      scannerRef.current?.stop().catch(() => undefined);
-      scannerRef.current?.clear().catch(() => undefined);
+      scanner
+        .stop()
+        .catch(() => undefined)
+        .finally(() => scanner.clear());
     };
   }, [taskId, markScanned]);
 
