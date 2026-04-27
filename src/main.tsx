@@ -4,10 +4,13 @@ import Papa from "papaparse";
 import { QRCodeSVG } from "qrcode.react";
 import { Html5Qrcode, type Html5QrcodeCameraScanConfig } from "html5-qrcode";
 import {
-  Camera,
   CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
   ClipboardPaste,
+  Copy,
   Download,
+  ExternalLink,
   FileUp,
   ImageIcon,
   ListChecks,
@@ -151,12 +154,18 @@ function getAssetLocation(task: TaskDetail, asset: Asset) {
   return column ? asset.raw?.[column] || "" : "";
 }
 
+function shouldAutoStartCamera() {
+  const userAgent = navigator.userAgent || "";
+  return /Android|iPhone|iPad|iPod/i.test(userAgent) || navigator.maxTouchPoints > 1;
+}
+
 function App() {
   const [tasks, setTasks] = useState<TaskSummary[]>([]);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(new URLSearchParams(location.search).get("task"));
   const [task, setTask] = useState<TaskDetail | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const isScanPage = location.pathname === "/scan";
 
   const refreshTasks = useCallback(async () => {
@@ -210,43 +219,69 @@ function App() {
   }
 
   return (
-    <main className="app-shell">
+    <main className={`app-shell ${sidebarCollapsed ? "sidebar-collapsed" : ""}`}>
       <aside className="sidebar">
-        <div className="brand">
-          <QrCode size={28} />
-          <div>
-            <h1>資產盤點</h1>
-            <p>CSV 匯入、QR 標籤、即時確認</p>
-          </div>
-        </div>
-        <TaskImporter
-          onCreated={async (created) => {
-            await refreshTasks();
-            setSelectedTaskId(created.id);
-          }}
-        />
-        <section className="task-list" aria-label="盤點任務">
-          <div className="section-title">
-            <span>任務</span>
-            <button className="icon-button" onClick={refreshTasks} title="重新整理">
-              <RefreshCw size={16} />
-            </button>
-          </div>
-          {tasks.map((item) => (
-            <div key={item.id} className={`task-row ${item.id === selectedTaskId ? "active" : ""}`}>
-              <button className="task-select" type="button" onClick={() => setSelectedTaskId(item.id)}>
-                <span>{item.name}</span>
-                <small>
-                  {item.checked}/{item.total} 已盤點
-                </small>
-              </button>
-              <button className="task-delete" type="button" onClick={() => deleteTask(item)} title="刪除任務">
-                <Trash2 size={16} />
-              </button>
+        <div className="brand-row">
+          <div className="brand">
+            <QrCode size={28} />
+            <div className="sidebar-full">
+              <h1>資產盤點</h1>
+              <p>CSV 匯入、QR 標籤、即時確認</p>
             </div>
-          ))}
-          {!tasks.length && <p className="empty">尚未建立盤點任務。</p>}
-        </section>
+          </div>
+          <button
+            className="icon-button sidebar-toggle"
+            type="button"
+            onClick={() => setSidebarCollapsed((value) => !value)}
+            title={sidebarCollapsed ? "展開側欄" : "收合側欄"}
+          >
+            {sidebarCollapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
+          </button>
+        </div>
+
+        {sidebarCollapsed ? (
+          <div className="sidebar-mini" aria-label="側欄已收合">
+            <span>{tasks.length}</span>
+            <small>任務</small>
+          </div>
+        ) : (
+          <div className="sidebar-content">
+            <TaskImporter
+              onCreated={async (created) => {
+                await refreshTasks();
+                setSelectedTaskId(created.id);
+              }}
+            />
+            <section className="task-list" aria-label="盤點任務">
+              <div className="section-title">
+                <span>任務</span>
+                <button className="icon-button" onClick={refreshTasks} title="重新整理">
+                  <RefreshCw size={16} />
+                </button>
+              </div>
+              {tasks.map((item) => {
+                const progress = item.total ? Math.round((item.checked / item.total) * 100) : 0;
+                return (
+                  <div key={item.id} className={`task-row ${item.id === selectedTaskId ? "active" : ""}`}>
+                    <button className="task-select" type="button" onClick={() => setSelectedTaskId(item.id)}>
+                      <span>{item.name}</span>
+                      <small>
+                        {item.checked}/{item.total} 已盤點 · {progress}%
+                      </small>
+                      <span className="task-progress" aria-label={`盤點進度 ${progress}%`}>
+                        <span style={{ width: `${progress}%` }} />
+                      </span>
+                    </button>
+                    <button className="task-delete" type="button" onClick={() => deleteTask(item)} title="刪除任務">
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+                );
+              })}
+              {!tasks.length && <p className="empty">尚未建立盤點任務。</p>}
+            </section>
+          </div>
+        )}
       </aside>
 
       <section className="workspace">
@@ -447,12 +482,20 @@ function EmptyState() {
 
 function TaskWorkspace({ task, onRefresh }: { task: TaskDetail; onRefresh: () => void }) {
   const [viewMode, setViewMode] = useState<"qr" | "list">("qr");
+  const [copiedScanUrl, setCopiedScanUrl] = useState(false);
   const checkedRatio = task.summary.total ? Math.round((task.summary.checked / task.summary.total) * 100) : 0;
   const scanHref = `/scan?task=${task.id}`;
+  const scanUrl = new URL(scanHref, window.location.origin).toString();
   const recentAssets = [...task.assets]
     .filter((asset) => asset.checkedAt)
     .sort((a, b) => String(b.checkedAt).localeCompare(String(a.checkedAt)))
     .slice(0, 8);
+
+  async function copyScanUrl() {
+    await navigator.clipboard.writeText(scanUrl);
+    setCopiedScanUrl(true);
+    window.setTimeout(() => setCopiedScanUrl(false), 1600);
+  }
 
   return (
     <>
@@ -465,10 +508,6 @@ function TaskWorkspace({ task, onRefresh }: { task: TaskDetail; onRefresh: () =>
           </p>
         </div>
         <div className="actions">
-          <a className="secondary-button" href={scanHref}>
-            <Camera size={16} />
-            開啟掃描
-          </a>
           <a className="secondary-button" href={`/api/tasks/${task.id}/export`}>
             <Download size={16} />
             匯出狀態
@@ -554,6 +593,27 @@ function TaskWorkspace({ task, onRefresh }: { task: TaskDetail; onRefresh: () =>
         </div>
 
         <div className="panel side-panel">
+          <div className="scan-share-card">
+            <div className="section-title">
+              <span>分享盤點入口</span>
+            </div>
+            <div className="share-qr">
+              <QRCodeSVG value={scanUrl} size={132} includeMargin />
+            </div>
+            <input className="share-url" value={scanUrl} readOnly onFocus={(event) => event.currentTarget.select()} />
+            <div className="share-actions">
+              <button className="secondary-button" type="button" onClick={copyScanUrl}>
+                <Copy size={16} />
+                {copiedScanUrl ? "已複製" : "複製網址"}
+              </button>
+              <a className="secondary-button" href={scanHref} target="_blank" rel="noreferrer">
+                <ExternalLink size={16} />
+                開啟
+              </a>
+            </div>
+            <p className="share-hint">把這個網址或 QR Code 提供給盤點者，對方會直接進入掃描頁。</p>
+          </div>
+
           <div className="section-title">
             <span>近期盤點</span>
           </div>
@@ -606,18 +666,21 @@ function ScannerPage({
   const [lastAssetNo, setLastAssetNo] = useState("");
   const [manualAssetNo, setManualAssetNo] = useState(new URLSearchParams(location.search).get("asset") || "");
   const [pendingScan, setPendingScan] = useState<PendingScan | null>(null);
+  const [pendingNote, setPendingNote] = useState("");
+  const [cameraEnabled, setCameraEnabled] = useState(shouldAutoStartCamera);
+  const [cameraMessage, setCameraMessage] = useState("");
   const [scannerInfo, setScannerInfo] = useState<ScannerInfo | null>(() => {
     try {
       const saved = window.localStorage.getItem(SCANNER_STORAGE_KEY);
       if (!saved) return null;
       const parsed = JSON.parse(saved) as ScannerInfo;
       if (!parsed.name?.trim() || !/^\d{8}$/.test(parsed.employeeId || "")) return null;
-      return { name: parsed.name.trim(), employeeId: parsed.employeeId, note: String(parsed.note || "").trim() };
+      return { name: parsed.name.trim(), employeeId: parsed.employeeId };
     } catch {
       return null;
     }
   });
-  const [scannerDraft, setScannerDraft] = useState<ScannerInfo>(() => scannerInfo || { name: "", employeeId: "", note: "" });
+  const [scannerDraft, setScannerDraft] = useState<ScannerInfo>(() => scannerInfo || { name: "", employeeId: "" });
   const [scannerError, setScannerError] = useState("");
   const readerId = "qr-reader";
 
@@ -626,7 +689,6 @@ function ScannerPage({
   function saveScannerInfo() {
     const name = scannerDraft.name.trim();
     const employeeId = scannerDraft.employeeId.trim();
-    const note = String(scannerDraft.note || "").trim();
     if (!name) {
       setScannerError("請輸入掃描者姓名");
       return;
@@ -636,7 +698,7 @@ function ScannerPage({
       return;
     }
 
-    const nextScanner = { name, employeeId, note };
+    const nextScanner = { name, employeeId };
     window.localStorage.setItem(SCANNER_STORAGE_KEY, JSON.stringify(nextScanner));
     setScannerInfo(nextScanner);
     setScannerDraft(nextScanner);
@@ -644,9 +706,16 @@ function ScannerPage({
   }
 
   function editScannerInfo() {
-    setScannerDraft(scannerInfo || { name: "", employeeId: "", note: "" });
+    setScannerDraft(scannerInfo || { name: "", employeeId: "" });
     setScannerInfo(null);
     setScannerError("");
+    setCameraEnabled(shouldAutoStartCamera());
+    setCameraMessage("");
+  }
+
+  function startCamera() {
+    setCameraMessage("");
+    setCameraEnabled(true);
   }
 
   function captureScannerPhoto() {
@@ -674,11 +743,15 @@ function ScannerPage({
     const assetNo = pendingScan.assetNo;
     setScanState("processing");
     try {
-      const result = await api.scan(taskId, assetNo, pendingScan.photoDataUrl, scannerInfo);
+      const result = await api.scan(taskId, assetNo, pendingScan.photoDataUrl, {
+        ...scannerInfo,
+        note: pendingNote.trim()
+      });
       setLastAssetNo(assetNo);
       setStatus("ok");
       setMessage(`${assetNo} 已完成盤點${result.alreadyChecked ? "，先前已掃描過" : ""}`);
       setPendingScan(null);
+      setPendingNote("");
       navigator.vibrate?.(80);
       await onLoadTask(taskId);
       window.setTimeout(() => {
@@ -691,10 +764,11 @@ function ScannerPage({
       setMessage(err instanceof Error ? err.message : "盤點失敗");
       setScanState("confirming");
     }
-  }, [onLoadTask, pendingScan, scannerInfo, taskId]);
+  }, [onLoadTask, pendingNote, pendingScan, scannerInfo, taskId]);
 
   function cancelPendingScan() {
     setPendingScan(null);
+    setPendingNote("");
     processingRef.current = false;
     setScanState("scanning");
   }
@@ -714,6 +788,7 @@ function ScannerPage({
 
     setLastAssetNo(assetNo);
     setPendingScan({ assetNo, rawValue, photoDataUrl: captureScannerPhoto() });
+    setPendingNote("");
     setStatus("idle");
     setMessage("");
     setScanState("confirming");
@@ -748,7 +823,7 @@ function ScannerPage({
   }, [scannerInfo, taskId, prepareScanConfirmation]);
 
   useEffect(() => {
-    if (!scannerInfo) return;
+    if (!scannerInfo || !cameraEnabled) return;
     let disposed = false;
     const scanner = new Html5Qrcode(readerId);
     scannerRef.current = scanner;
@@ -781,8 +856,9 @@ function ScannerPage({
 
     startScanner().catch(() => {
       if (!disposed) {
+        setCameraEnabled(false);
         setStatus("error");
-        setMessage("無法開啟相機，請確認瀏覽器權限，或使用手動輸入。");
+        setCameraMessage("相機未啟動，可手動輸入資產編號，或允許權限後再啟動相機。");
       }
     });
 
@@ -793,13 +869,13 @@ function ScannerPage({
         .catch(() => undefined)
         .finally(() => scanner.clear());
     };
-  }, [scannerInfo, taskId, prepareScanConfirmation]);
+  }, [cameraEnabled, scannerInfo, taskId, prepareScanConfirmation]);
 
   return (
     <main className="scan-shell">
       <header className="scan-header">
-        <a href={taskId ? `/?task=${taskId}` : "/"}>返回任務</a>
         <div>
+          <span className="scan-kicker">盤點入口</span>
           <h1>{task?.name || "資產盤點掃描"}</h1>
           <p>{task ? `${task.summary.checked}/${task.summary.total} 已盤點` : "讀取任務中..."}</p>
         </div>
@@ -824,15 +900,6 @@ function ScannerPage({
               placeholder="8 碼數字"
             />
           </label>
-          <label>
-            <span>備註</span>
-            <textarea
-              className="scanner-note-input"
-              value={scannerDraft.note || ""}
-              onChange={(event) => setScannerDraft((current) => ({ ...current, note: event.target.value }))}
-              placeholder="選填"
-            />
-          </label>
           {scannerError && <div className="notice error compact">{scannerError}</div>}
           <button className="primary-button" type="button" onClick={saveScannerInfo}>
             <CheckCircle2 size={16} />
@@ -843,10 +910,7 @@ function ScannerPage({
 
       {scannerInfo && (
         <div className="scanner-meta">
-          <span>
-            掃描者：{scannerInfo.name} · {scannerInfo.employeeId}
-            {scannerInfo.note ? ` · ${scannerInfo.note}` : ""}
-          </span>
+          <span>掃描者：{scannerInfo.name} · {scannerInfo.employeeId}</span>
           <button className="secondary-button" type="button" onClick={editScannerInfo}>
             更換掃描者
           </button>
@@ -855,12 +919,23 @@ function ScannerPage({
 
       {scannerInfo && (
         <section className="scanner-panel">
-          <div className="scanner-frame">
-            <div id={readerId} />
-            <div className={`scan-badge ${scanState}`}>
-              {scanState === "processing" ? "儲存盤點中" : scanState === "confirming" ? "請確認此資產" : "自動偵測 QR Code"}
+          {cameraEnabled ? (
+            <div className="scanner-frame">
+              <div id={readerId} />
+              <div className={`scan-badge ${scanState}`}>
+                {scanState === "processing" ? "儲存盤點中" : scanState === "confirming" ? "請確認此資產" : "自動偵測 QR Code"}
+              </div>
             </div>
-          </div>
+          ) : (
+            <div className="scanner-placeholder">
+              <QrCode size={36} />
+              <strong>相機尚未啟動</strong>
+              {cameraMessage && <span>{cameraMessage}</span>}
+              <button className="secondary-button" type="button" onClick={startCamera}>
+                啟動相機
+              </button>
+            </div>
+          )}
           {pendingScan && (
             <div className="confirm-scan-card">
               <div>
@@ -872,6 +947,15 @@ function ScannerPage({
               ) : (
                 <p className="empty">目前沒有可儲存的相機畫面。</p>
               )}
+              <label>
+                <span>本次盤點備註</span>
+                <textarea
+                  className="scanner-note-input"
+                  value={pendingNote}
+                  onChange={(event) => setPendingNote(event.target.value)}
+                  placeholder="選填，例如：資產外觀正常、位置與清冊不符"
+                />
+              </label>
               <div className="confirm-actions">
                 <button className="secondary-button" type="button" onClick={cancelPendingScan}>
                   取消
