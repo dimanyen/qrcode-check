@@ -1,7 +1,6 @@
 node_modules/
 dist/
-data/store.json
-data/scan-photos/
+data/
 
 .DS_Store
 *.log
