@@ -14,6 +14,7 @@ import {
   Printer,
   QrCode,
   RefreshCw,
+  Trash2,
   Upload,
   X
 } from "lucide-react";
@@ -102,6 +103,16 @@ const api = {
     const payload = await response.json();
     if (!response.ok) throw new Error(payload.error || "盤點失敗");
     return payload;
+  },
+  async deleteTask(taskId: string, password: string) {
+    const response = await fetch(`/api/tasks/${taskId}`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ password })
+    });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || "刪除任務失敗");
+    return payload;
   }
 };
 
@@ -165,6 +176,27 @@ function App() {
     }
   }, []);
 
+  async function deleteTask(taskToDelete: TaskSummary) {
+    const confirmed = window.confirm(`確定要刪除「${taskToDelete.name}」？此動作會刪除任務、盤點狀態與盤點照片。`);
+    if (!confirmed) return;
+
+    const password = window.prompt("請輸入刪除密碼");
+    if (password == null) return;
+
+    setError("");
+    try {
+      await api.deleteTask(taskToDelete.id, password);
+      const updatedTasks = await api.listTasks();
+      setTasks(updatedTasks);
+      if (selectedTaskId === taskToDelete.id) {
+        setSelectedTaskId(updatedTasks[0]?.id || null);
+        setTask(null);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "刪除任務失敗");
+    }
+  }
+
   useEffect(() => {
     refreshTasks();
   }, []);
@@ -201,16 +233,17 @@ function App() {
             </button>
           </div>
           {tasks.map((item) => (
-            <button
-              key={item.id}
-              className={`task-row ${item.id === selectedTaskId ? "active" : ""}`}
-              onClick={() => setSelectedTaskId(item.id)}
-            >
-              <span>{item.name}</span>
-              <small>
-                {item.checked}/{item.total} 已盤點
-              </small>
-            </button>
+            <div key={item.id} className={`task-row ${item.id === selectedTaskId ? "active" : ""}`}>
+              <button className="task-select" type="button" onClick={() => setSelectedTaskId(item.id)}>
+                <span>{item.name}</span>
+                <small>
+                  {item.checked}/{item.total} 已盤點
+                </small>
+              </button>
+              <button className="task-delete" type="button" onClick={() => deleteTask(item)} title="刪除任務">
+                <Trash2 size={16} />
+              </button>
+            </div>
           ))}
           {!tasks.length && <p className="empty">尚未建立盤點任務。</p>}
         </section>

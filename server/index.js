@@ -8,6 +8,7 @@ const PORT = process.env.PORT || 4173;
 const DATA_DIR = path.join(__dirname, "..", "data");
 const STORE_FILE = path.join(DATA_DIR, "store.json");
 const SCAN_PHOTO_DIR = path.join(DATA_DIR, "scan-photos");
+const DELETE_TASK_PASSWORD = "dmishandsome";
 
 app.use(express.json({ limit: "10mb" }));
 app.use("/scan-photos", express.static(SCAN_PHOTO_DIR));
@@ -127,6 +128,30 @@ app.get("/api/tasks/:id", (req, res) => {
   const task = store.tasks.find((item) => item.id === req.params.id);
   if (!task) return res.status(404).json({ error: "找不到盤點任務" });
   res.json({ ...task, summary: toSummary(task) });
+});
+
+app.delete("/api/tasks/:id", (req, res) => {
+  const password = String(req.body.password || "");
+  if (password !== DELETE_TASK_PASSWORD) {
+    return res.status(403).json({ error: "刪除密碼錯誤" });
+  }
+
+  const store = readStore();
+  const taskIndex = store.tasks.findIndex((item) => item.id === req.params.id);
+  if (taskIndex === -1) return res.status(404).json({ error: "找不到盤點任務" });
+
+  const [removedTask] = store.tasks.splice(taskIndex, 1);
+  const photoPaths = removedTask.assets
+    .map((asset) => asset.scanPhotoUrl)
+    .filter((photoUrl) => typeof photoUrl === "string" && photoUrl.startsWith("/scan-photos/"))
+    .map((photoUrl) => path.join(SCAN_PHOTO_DIR, path.basename(photoUrl)));
+
+  writeStore(store);
+  photoPaths.forEach((photoPath) => {
+    if (fs.existsSync(photoPath)) fs.unlinkSync(photoPath);
+  });
+
+  res.json({ deleted: true, id: removedTask.id });
 });
 
 app.post("/api/tasks/:id/scan", (req, res) => {

@@ -169,7 +169,8 @@ textarea {
 .primary-button,
 .secondary-button,
 .icon-button,
-.task-row {
+.task-select,
+.task-delete {
   border: 0;
   cursor: pointer;
 }
@@ -254,10 +255,11 @@ textarea {
 
 .task-row {
   display: grid;
-  gap: 4px;
+  grid-template-columns: minmax(0, 1fr) 34px;
+  gap: 8px;
+  align-items: center;
   width: 100%;
-  padding: 12px;
-  text-align: left;
+  padding: 8px;
   background: #f5f7f9;
   border: 1px solid transparent;
   border-radius: 8px;
@@ -268,11 +270,36 @@ textarea {
   background: #edf7f5;
 }
 
-.task-row span {
-  font-weight: 800;
+.task-select {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 4px;
+  color: inherit;
+  text-align: left;
+  background: transparent;
 }
 
-.task-row small,
+.task-select span {
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.task-delete {
+  display: inline-grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 6px;
+  color: #8a1f2d;
+  background: #fdeced;
+}
+
+.task-delete:hover {
+  background: #f8d2d6;
+}
+
+.task-select small,
 .empty,
 .qr-tile span,
 .asset-row span,
