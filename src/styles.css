@@ -576,7 +576,7 @@ textarea {
 
 .inventory-row {
   display: grid;
-  grid-template-columns: minmax(150px, 1.25fr) minmax(120px, 0.9fr) minmax(110px, 0.75fr) minmax(120px, 0.85fr) minmax(140px, 1fr) 72px;
+  grid-template-columns: minmax(150px, 1.2fr) minmax(110px, 0.85fr) minmax(120px, 0.85fr) minmax(110px, 0.72fr) minmax(120px, 0.82fr) minmax(140px, 1fr) 72px;
   gap: 12px;
   align-items: center;
   padding: 12px;
@@ -592,6 +592,7 @@ textarea {
 
 .inventory-main,
 .inventory-location,
+.inventory-owner,
 .inventory-status,
 .inventory-scanner,
 .inventory-note {
@@ -603,6 +604,7 @@ textarea {
 .inventory-main strong,
 .inventory-main span,
 .inventory-location strong,
+.inventory-owner strong,
 .inventory-scanner span,
 .inventory-scanner small,
 .inventory-note span,
@@ -612,6 +614,7 @@ textarea {
 
 .inventory-main span,
 .inventory-location span,
+.inventory-owner span,
 .inventory-status small,
 .inventory-scanner small,
 .inventory-note small {
@@ -626,6 +629,10 @@ textarea {
 }
 
 .inventory-location strong {
+  font-size: 14px;
+}
+
+.inventory-owner strong {
   font-size: 14px;
 }
 
